@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../api";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Input } from "@/components/ui/input";
@@ -32,16 +33,7 @@ const DonateFood = () => {
     }
 
     try {
-      const res = await fetch("https://jirani-eats-6.onrender.com/api/foods", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (!res.ok) throw new Error("Failed to create donation");
+      await api.post("/foods", formData);
 
       toast.success("🎉 Food donation added successfully!");
       setFormData({

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import api from "../api";
 
 const MyRequests = () => {
   const { user } = useAuth();
@@ -15,11 +16,8 @@ const MyRequests = () => {
     const fetchRequests = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`https://jirani-eats-6.onrender.com/api/requests`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Failed to fetch requests");
-        const data = await res.json();
+        const res = await api.get("/requests");
+        const data = res.data;
         setRequests(data.filter(req => req.requestedBy?._id === user._id));
       } catch (err) {
         console.error(err);

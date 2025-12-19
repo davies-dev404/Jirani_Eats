@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
 import { AuthContext } from "@/context/AuthContext";
+import api from "../api";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { toast } from "sonner";
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 
 const FoodList = () => {
-  const { token } = useContext(AuthContext);
+  const { token, user } = useContext(AuthContext);
   const [foods, setFoods] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -15,8 +16,8 @@ const FoodList = () => {
   useEffect(() => {
     const fetchFoods = async () => {
       try {
-        const res = await fetch("https://jirani-eats-6.onrender.com/api/foods");
-        const data = await res.json();
+        const res = await api.get("/foods");
+        const data = res.data;
         setFoods(data);
       } catch (err) {
         console.error("❌ Error fetching food:", err);
@@ -28,6 +29,25 @@ const FoodList = () => {
     fetchFoods();
   }, []);
 
+  // ✅ Check for allergies
+  const checkAllergyWarning = (food) => {
+      if (!user?.allergies || user.allergies.length === 0) return null;
+      
+      const foodText = `${food.title} ${food.description || ""}`.toLowerCase();
+      const detectedAllergies = user.allergies.filter(allergy => 
+          foodText.includes(allergy.toLowerCase())
+      );
+
+      if (detectedAllergies.length > 0) {
+          return (
+              <div className="bg-red-50 text-red-700 text-xs p-2 rounded border border-red-200 mt-2">
+                  ⚠️ Caution: Contains <strong>{detectedAllergies.join(", ")}</strong>
+              </div>
+          );
+      }
+      return null;
+  };
+
   // ✅ Handle request for food
   const handleRequest = async (foodTitle) => {
     if (!token) {
@@ -36,23 +56,12 @@ const FoodList = () => {
     }
 
     try {
-      const res = await fetch("https://jirani-eats-6.onrender.com/api/requests", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      await api.post("/requests", {
           foodType: foodTitle,
           message: "I would like to request this food.",
-        }),
       });
 
-      if (res.ok) {
-        toast.success("✅ Food request sent successfully!");
-      } else {
-        toast.error("❌ Failed to send request.");
-      }
+      toast.success("✅ Food request sent successfully!");
     } catch (err) {
       console.error("Request error:", err);
       toast.error("Error sending request. Please try again later.");
@@ -108,6 +117,10 @@ const FoodList = () => {
                   <p className="line-clamp-2 text-sm">
                     {food.description || "No description available."}
                   </p>
+                  
+                  {/* Allergy Warning */}
+                  {checkAllergyWarning(food)}
+
                   <p className="text-sm">
                     <strong>Quantity:</strong> {food.quantity} {food.unit}
                   </p>

@@ -1,25 +1,19 @@
 import express from "express";
-import User from "../models/User.js";
+import { getUserProfile, updateUserProfile, updateUserStatus, getAllUsers, verifyUser } from "../controllers/userController.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// ✅ Update user profile
-router.put("/update/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = req.body;
+router.use(protect);
 
-    const user = await User.findByIdAndUpdate(id, updates, { new: true });
+router.route("/")
+    .get(getAllUsers);
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+router.route("/profile")
+  .get(getUserProfile)
+  .put(updateUserProfile);
 
-    res.json({ message: "Profile updated successfully", user });
-  } catch (error) {
-    console.error("Profile update error:", error);
-    res.status(500).json({ message: "Failed to update profile", error });
-  }
-});
+router.route("/status").patch(updateUserStatus);
+router.route("/:id/verify").patch(verifyUser);
 
 export default router;

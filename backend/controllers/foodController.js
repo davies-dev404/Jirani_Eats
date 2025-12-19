@@ -1,112 +1,134 @@
-// controllers/foodController.js
 import Food from "../models/FoodItem.js";
-import { io } from "../server.js";
 
-// ✅ Create new food item
-export const createFoodItem = async (req, res) => {
+// @desc    Get all foods
+// @route   GET /api/foods
+// @access  Public
+export const getFoods = async (req, res) => {
   try {
-    const { title, description, quantity, unit, expiryDate, pickupLocation } = req.body;
+    // Only show approved and available foods
+    const foods = await Food.find({ isAvailable: true, approvalStatus: 'available' }).populate("postedBy", "name email phone verificationStatus");
+    res.json(foods);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
-    if (!title || !quantity) {
-      return res.status(400).json({ message: "Title and quantity are required" });
+// @desc    Get my foods (Donor)
+// @route   GET /api/foods/my-foods
+// @access  Private
+export const getMyFoods = async (req, res) => {
+    try {
+        const foods = await Food.find({ postedBy: req.user._id.toString() })
+            .populate("postedBy", "name email phone verificationStatus")
+            .sort({ createdAt: -1 });
+        res.json(foods);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
+};
 
-    const newFood = await Food.create({
+// @desc    Get single food
+// @route   GET /api/foods/:id
+// @access  Public
+export const getFoodById = async (req, res) => {
+    try {
+        const food = await Food.findById(req.params.id).populate("postedBy", "name email phone verificationStatus");
+        if (food) {
+            res.json(food);
+        } else {
+            res.status(404).json({ message: "Food not found" });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Create a food item
+// @route   POST /api/foods
+// @access  Private (Donor)
+export const createFood = async (req, res) => {
+  try {
+    const { title, description, quantity, unit, pickupLocation, expiryDate, imageUrl } = req.body;
+
+    const food = new Food({
       title,
       description,
       quantity,
       unit,
-      expiryDate,
       pickupLocation,
-      postedBy: req.user._id,
+      expiryDate,
+      imageUrl,
+      postedBy: req.user._id.toString(),
+      approvalStatus: 'pending_approval' // Explicitly pending_approval
     });
 
-    io.emit("foodAdded", {
-      ...newFood.toObject(),
-      postedBy: req.user._id,
-    });
+    const createdFood = await food.save();
+    
+    // Emit socket event to Admins only? 
+    // Currently we broadcast to everyone. We should STOP broadcasting to receivers until approved.
+    // We can broadcast a "newFoodPending" event if we want Admins to see it real-time.
+    const io = req.app.get("socketio");
+    io.emit("adminFoodPending", await createdFood.populate("postedBy", "name"));
 
-    res.status(201).json(newFood);
+    res.status(201).json(createdFood);
   } catch (error) {
-    console.error("❌ Error creating food item:", error);
-    res.status(500).json({ message: "Server error creating food item" });
+    res.status(500).json({ message: error.message });
   }
 };
 
-// ✅ Get all food items (public for logged-in users)
-export const getFoodItems = async (req, res) => {
-  try {
-    const foods = await Food.find()
-      .populate("postedBy", "name email")
-      .sort({ createdAt: -1 });
+// @desc    Update food item
+// @route   PUT /api/foods/:id
+// @access  Private (Owner)
+export const updateFood = async (req, res) => {
+    try {
+        const food = await Food.findById(req.params.id);
+        if(!food) return res.status(404).json({ message: "Food not found" });
+        
+        if(food.postedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            return res.status(401).json({ message: "Not authorized" });
+        }
 
-    res.json(foods);
-  } catch (error) {
-    console.error("❌ Error fetching foods:", error);
-    res.status(500).json({ message: "Server error fetching food items" });
-  }
-};
+        const updatedFood = await Food.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        
+        // Emit update event
+        const io = req.app.get("socketio");
+        io.emit("foodUpdated", updatedFood);
 
-// ✅ Get single food item by ID
-export const getFoodById = async (req, res) => {
-  try {
-    const food = await Food.findById(req.params.id).populate("postedBy", "name email");
-    if (!food) return res.status(404).json({ message: "Food item not found" });
-
-    res.json(food);
-  } catch (error) {
-    console.error("❌ Error fetching food by ID:", error);
-    res.status(500).json({ message: "Server error fetching food item" });
-  }
-};
-
-// ✅ Update food item
-export const updateFoodItem = async (req, res) => {
-  try {
-    const food = await Food.findById(req.params.id);
-    if (!food) return res.status(404).json({ message: "Food item not found" });
-
-    if (food.postedBy.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Not authorized to update this food item" });
+        res.json(updatedFood);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
-
-    const { title, description, quantity, unit, expiryDate, pickupLocation } = req.body;
-
-    food.title = title || food.title;
-    food.description = description || food.description;
-    food.quantity = quantity || food.quantity;
-    food.unit = unit || food.unit;
-    food.expiryDate = expiryDate || food.expiryDate;
-    food.pickupLocation = pickupLocation || food.pickupLocation;
-
-    await food.save();
-
-    io.emit("foodUpdated", food);
-
-    res.json(food);
-  } catch (error) {
-    console.error("❌ Error updating food item:", error);
-    res.status(500).json({ message: "Server error updating food item" });
-  }
 };
 
-// ✅ Delete food item
-export const deleteFoodItem = async (req, res) => {
-  try {
-    const food = await Food.findById(req.params.id);
-    if (!food) return res.status(404).json({ message: "Food item not found" });
-
-    if (food.postedBy.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Not authorized to delete this food item" });
+// @desc    Get ALL foods (Admin) - including pending
+// @route   GET /api/foods/admin
+// @access  Private/Admin
+export const getAllFoodsAdmin = async (req, res) => {
+    try {
+        const foods = await Food.find({})
+            .populate("postedBy", "name email phone")
+            .sort({ createdAt: -1 });
+        res.json(foods);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
-
-    await food.deleteOne();
-
-    io.emit("foodDeleted", req.params.id);
-
-    res.json({ message: "Food item deleted successfully" });
-  } catch (error) {
-    console.error("❌ Error deleting food item:", error);
-    res.status(500).json({ message: "Server error deleting food item" });
-  }
 };
+
+// @desc    Delete food item
+// @route   DELETE /api/foods/:id
+// @access  Private (Owner/Admin)
+export const deleteFood = async (req, res) => {
+    try {
+        const food = await Food.findById(req.params.id);
+        if(!food) return res.status(404).json({ message: "Food not found" });
+
+        if(food.postedBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            return res.status(401).json({ message: "Not authorized" });
+        }
+
+        await Food.deleteOne({ _id: food._id });
+        res.json({ message: "Food removed" });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}

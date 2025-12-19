@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { ModeToggle } from "./mode-toggle";
+import { NotificationDropdown } from "./notification-dropdown";
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -34,7 +36,8 @@ const Navbar = () => {
             <Link to="/how-it-works" className="hover:text-primary transition-colors">How It Works</Link>
             <Link to="/gallery" className="hover:text-primary transition-colors">Gallery</Link>
             <Link to="/contacts" className="hover:text-primary transition-colors">Contacts</Link>
-        
+            <NotificationDropdown />
+            <ModeToggle />
             <Button variant="default" asChild>
               <Link to="/auth">Get Started</Link>
             </Button>

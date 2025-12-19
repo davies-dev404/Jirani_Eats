@@ -1,31 +1,24 @@
 import express from "express";
-import {
-  createFoodRequest,
-  getFoodRequests,
-  getRequestsForDonor,
-  getSingleRequest,
-  deleteFoodRequest,
-} from "../controllers/requestController.js";
+import { createRequest, getMyRequests, updateRequestStatus, getRequestById, getAvailableJobs, getActiveJob, assignRider, acceptRequest, declineRequest } from "../controllers/requestController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Protect all routes
 router.use(protect);
 
-// Receiver: create a request
-router.post("/", createFoodRequest);
+router.route("/")
+  .post(createRequest)
+  .get(getMyRequests);
 
-// Receiver: get own requests
-router.get("/", getFoodRequests);
+router.get("/rider/available", getAvailableJobs);
+router.get("/rider/active", getActiveJob);
 
-// Donor: get all requests for their donations
-router.get("/donor", getRequestsForDonor);
+router.route("/:id")
+  .get(getRequestById)
+  .patch(updateRequestStatus); // General update
 
-// Get single request by ID
-router.get("/:id", getSingleRequest);
-
-// Delete a request
-router.delete("/:id", deleteFoodRequest);
+router.patch("/:id/assign", assignRider); // Admin assign
+router.patch("/:id/accept", acceptRequest); // Rider accept
+router.patch("/:id/decline", declineRequest); // Rider decline assignment
 
 export default router;

@@ -18,6 +18,7 @@ const Auth = () => {
     name: "",
     email: "",
     password: "",
+    phone: "", // added phone
     role: "receiver", // default role
   });
   const [error, setError] = useState("");
@@ -38,8 +39,10 @@ const Auth = () => {
       const user = await login(loginData); // login now returns user
 
       // Redirect based on role
-      if (user.role === "donor") navigate("/add-food");
-      else navigate("/dashboard/browse-donations");
+      if (user.role === "admin") navigate("/dashboard/admin");
+      else if (user.role === "donor") navigate("/dashboard/donor");
+      else if (user.role === "rider") navigate("/dashboard/rider");
+      else navigate("/dashboard/receiver");
     } catch (err) {
       // Show backend error neatly under the form
       setError(err.message);
@@ -174,6 +177,18 @@ const Auth = () => {
                       </div>
 
                       <div>
+                        <Label>Phone Number</Label>
+                        <Input
+                          type="tel"
+                          value={signupData.phone}
+                          onChange={(e) =>
+                            setSignupData({ ...signupData, phone: e.target.value })
+                          }
+                          placeholder="+254 700 000 000"
+                        />
+                      </div>
+
+                      <div>
                         <Label>Password</Label>
                         <Input
                           type="password"
@@ -196,8 +211,25 @@ const Auth = () => {
                         >
                           <option value="receiver">Receiver</option>
                           <option value="donor">Donor</option>
+                          <option value="rider">Rider</option>
+                          <option value="admin">Admin</option>
                         </select>
                       </div>
+
+                      {/* Admin Secret Check */}
+                      {signupData.role === "admin" && (
+                        <div>
+                          <Label>Admin Secret Key</Label>
+                          <Input
+                            type="password"
+                            value={signupData.adminSecret || ""}
+                            onChange={(e) =>
+                              setSignupData({ ...signupData, adminSecret: e.target.value })
+                            }
+                            placeholder="Enter system secret"
+                          />
+                        </div>
+                      )}
 
                       {error && <p className="text-sm text-red-500">{error}</p>}
 

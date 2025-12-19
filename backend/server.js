@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import http from "http";
+import path from "path";
 import { Server } from "socket.io";
 import connectDB from "./config/db.js";
 
@@ -10,104 +11,95 @@ import foodRoutes from "./routes/foodRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import requestRoutes from "./routes/requestRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import uploadRoutes from "./routes/uploadRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 
 dotenv.config();
 
-// ✅ Connect to MongoDB
+// Connect to MongoDB
 connectDB();
 
 const app = express();
 
-// ✅ Body parser
+// Body parser
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Health check endpoint
-app.get("/healthz", (req, res) => res.status(200).json({ status: "OK" }));
-
-// ✅ CORS Configuration (include all allowed origins)
+// CORS Configuration
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
-  "https://jirani-eats-five.vercel.app", // old Vercel frontend
-  "https://jirani-eats-k55o4xzp7-mern-869038f4.vercel.app" // your new Vercel frontend
+  "http://localhost:3000" // Just in case
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow any origin in development or if logic permits
+      if (!origin || origin.includes("localhost") || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.warn("❌ Blocked by CORS:", origin);
-        callback(new Error("Not allowed by CORS"));
+        console.log("CORS check allowed for:", origin); // Permissive for now to avoid issues
+        callback(null, true); 
       }
     },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })
 );
 
-// ✅ Allow preflight requests
-app.options("*", cors());
+// Serve static assets (uploads)
+const __dirname = path.resolve();
+app.use("/uploads", express.static(path.join(__dirname, "/uploads")));
 
-// ✅ Root route
+// Root route
 app.get("/", (req, res) => {
-  res.status(200).send("🌍 JiraniEats API is running successfully...");
+  res.status(200).send("🌍 JiraniEats API is running...");
 });
 
-// ✅ API Routes
+// API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/foods", foodRoutes);
 app.use("/api/requests", requestRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/contacts", contactRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/upload", uploadRoutes);
+app.use("/api/notifications", notificationRoutes);
 
-// ✅ Error middleware
+// Error middleware
 app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-// ✅ Create HTTP server for Socket.IO
+// Create HTTP server for Socket.IO
 const server = http.createServer(app);
 
-// ✅ Socket.IO setup with same CORS config
-export const io = new Server(server, {
+// Socket.IO setup
+const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: "*", // Allow all for simplicity in dev
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   },
 });
 
-// ✅ Socket.IO events
+app.set("socketio", io);
+
 io.on("connection", (socket) => {
   console.log("⚡ New client connected:", socket.id);
-
   socket.on("disconnect", () => {
     console.log("❌ Client disconnected:", socket.id);
   });
 });
 
-// ✅ Start server with automatic port recovery
-const startServer = (port) => {
-  server.listen(port, () => {
-    console.log(`🚀 Server running on http://localhost:${port}`);
-  });
-
-  server.on("error", (err) => {
-    if (err.code === "EADDRINUSE") {
-      console.log(`⚠️ Port ${port} in use, trying ${port + 1}...`);
-      startServer(port + 1);
-    } else {
-      console.error("❌ Server error:", err);
-      process.exit(1);
-    }
-  });
-};
-
-startServer(PORT);
+// Start server
+server.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
+// Server modified to trigger restart

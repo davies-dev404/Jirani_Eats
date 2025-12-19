@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import api from "../api";
 
 const MyRequests = () => {
   const [requests, setRequests] = useState([]);
@@ -16,13 +17,8 @@ const MyRequests = () => {
   useEffect(() => {
     const fetchRequests = async () => {
       try {
-        const res = await fetch("https://jirani-eats-6.onrender.com/api/requests", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) throw new Error(data.message || "Failed to fetch requests");
+        const res = await api.get("/requests");
+        const data = res.data;
 
         setRequests(data);
       } catch (error) {
@@ -41,12 +37,7 @@ const MyRequests = () => {
     if (!window.confirm("Are you sure you want to cancel this request?")) return;
 
     try {
-      const res = await fetch(`https://jirani-eats-6.onrender.com/api/requests/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) throw new Error("Failed to cancel request");
+      await api.delete(`/requests/${id}`);
 
       setRequests(requests.filter((r) => r._id !== id));
       toast.success("Request cancelled successfully!");

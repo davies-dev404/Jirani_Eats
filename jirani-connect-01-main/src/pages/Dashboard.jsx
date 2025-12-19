@@ -1,22 +1,20 @@
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Link, useNavigate } from "react-router-dom";
-import { Plus, Package, Inbox, TrendingUp, LogOut } from "lucide-react";
+import { DashboardLayout } from "@/components/layouts/DashboardLayout";
+import { useNavigate } from "react-router-dom";
+import { LogOut } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { io } from "socket.io-client";
+import api from "../api";
+
+import AdminDashboard from "@/components/dashboards/AdminDashboard";
+import DonorDashboard from "@/components/dashboards/DonorDashboard";
+import ReceiverDashboard from "@/components/dashboards/ReceiverDashboard";
+import RiderDashboard from "@/components/dashboards/RiderDashboard";
 
 const Dashboard = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
@@ -24,36 +22,32 @@ const Dashboard = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  if (authLoading) {
+      return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  // Data fetching logic (Skip for Admin as it fetches internally)
   const fetchDashboardData = useCallback(async () => {
-    if (!user || !token) return;
+    if (!user || !token || user.role === 'admin') return;
     try {
       setLoading(true);
 
-      // Fetch foods
-      const foodRes = await fetch("https://jirani-eats-6.onrender.com/api/foods", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      let foodData = await foodRes.json();
-      if (!Array.isArray(foodData)) foodData = [];
+      const foodRes = await api.get("/foods");
+      let foodData = foodRes.data || [];
 
-      // Fetch requests
-      const requestRes = await fetch("https://jirani-eats-6.onrender.com/api/requests", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      let requestData = await requestRes.json();
-      if (!Array.isArray(requestData)) requestData = [];
+      const requestRes = await api.get("/requests");
+      let requestData = requestRes.data || [];
 
-      // Filter foods based on role
       let myFoods = [];
       if (user.role === "donor") {
-        myFoods = foodData.filter(
-          (item) => item.postedBy?._id === user._id || item.postedBy === user._id
-        );
+          const myFoodRes = await api.get("/foods/my-foods");
+          myFoods = myFoodRes.data || [];
       } else if (user.role === "receiver") {
-        myFoods = foodData; // Receivers see all donations
+           // Receivers see filtered list from public endpoint
+           // But we already fetched public foods into `foodData`
+           myFoods = foodData; 
       }
 
-      // Filter requests made by this user (receiver) or received by this donor
       let myRequests = [];
       if (user.role === "receiver") {
         myRequests = requestData.filter(
@@ -68,8 +62,14 @@ const Dashboard = () => {
       setFoods(myFoods);
       setRequests(myRequests);
     } catch (err) {
-      console.error("❌ Error fetching dashboard data:", err);
-      toast.error("Error loading dashboard data.");
+      console.error("Dashboard fetch error:", err);
+      if (err.response && err.response.status === 401) {
+        toast.error("Session expired. Please login again.");
+        logout();
+        navigate("/auth");
+      } else {
+        toast.error("Error loading dashboard data.");
+      }
     } finally {
       setLoading(false);
     }
@@ -78,34 +78,34 @@ const Dashboard = () => {
   useEffect(() => {
     fetchDashboardData();
 
-    const socket = io("https://jirani-eats-6.onrender.com", { auth: { token } });
+    if (user?.role !== 'admin') {
+      const socket = io(import.meta.env.VITE_API_URL || "http://localhost:5000", {
+        auth: { token },
+      });
 
-    socket.on("foodAdded", (food) => {
-      if (user?.role === "receiver") {
-        setFoods((prev) => [food, ...prev]);
-      } else if (user?.role === "donor" && food.postedBy?._id === user._id) {
-        setFoods((prev) => [food, ...prev]);
-      }
-    });
+      socket.on("connect", () => console.log("✅ Socket connected"));
+      
+      socket.on("foodAdded", (food) => {
+        const postedById = food.postedBy?._id || food.postedBy;
+        if (user.role === "receiver") setFoods(prev => [food, ...prev]);
+        if (user.role === "donor" && postedById === user._id) setFoods(prev => [food, ...prev]);
+      });
 
-    socket.on("requestAdded", (request) => {
-      if (user.role === "receiver" && request.requestedBy?._id === user._id) {
-        setRequests((prev) => [request, ...prev]);
-      } else if (user.role === "donor" && request.food?.postedBy?._id === user._id) {
-        setRequests((prev) => [request, ...prev]);
-      }
-    });
+      socket.on("requestAdded", (request) => {
+        const foodPosterId = request.food?.postedBy?._id || request.food?.postedBy;
+        const requesterId = request.requestedBy?._id || request.requestedBy;
+        
+        if (user.role === "donor" && foodPosterId === user._id) setRequests(prev => [request, ...prev]);
+        if (user.role === "receiver" && requesterId === user._id) setRequests(prev => [request, ...prev]);
+      });
 
-    socket.on("requestUpdated", (updated) => {
-      setRequests((prev) =>
-        prev.map((r) => (r._id === updated._id ? updated : r))
-      );
-    });
+      socket.on("requestUpdated", (updated) => {
+        setRequests(prev => prev.map(r => (r._id === updated._id ? updated : r)));
+      });
 
-    return () => socket.disconnect();
+      return () => socket.disconnect();
+    }
   }, [fetchDashboardData, token, user]);
-
-  const totalImpact = foods.length + requests.length;
 
   const handleLogout = () => {
     logout();
@@ -114,19 +114,10 @@ const Dashboard = () => {
 
   const handleUpdateRequest = async (id, status) => {
     try {
-      const res = await fetch(`https://jirani-eats-6.onrender.com/api/requests/${id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error("Failed to update request");
+      await api.patch(`/requests/${id}`, { status });
       toast.success(`Request ${status}!`);
       fetchDashboardData();
     } catch (err) {
-      console.error(err);
       toast.error("Error updating request");
     }
   };
@@ -138,237 +129,44 @@ const Dashboard = () => {
     return String(value);
   };
 
-  // Quick Actions
-  const donorActions = (
-    <div className="flex flex-wrap gap-3">
-      <Button asChild variant="default">
-        <Link to="/add-food">
-          <Plus className="mr-2 h-4 w-4" /> Donate Your Food
-        </Link>
-      </Button>
-      <Button asChild variant="outline">
-        <Link to="/dashboard/browse-donations">
-          <Package className="mr-2 h-4 w-4" /> Browse Donations
-        </Link>
-      </Button>
-    </div>
-  );
-
-  const receiverActions = (
-    <div className="flex flex-wrap gap-3">
-      <Button asChild variant="secondary">
-        <Link to="/dashboard/browse-donations">
-          <Inbox className="mr-2 h-4 w-4" /> Request Food
-        </Link>
-      </Button>
-    </div>
-  );
+  // Normalize role for robustness
+  const userRole = user?.role?.toLowerCase();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-50 to-white">
-      <Navbar />
-
-      <main className="container mx-auto px-4 py-16">
-        <div className="max-w-6xl mx-auto space-y-8">
-          {/* Header */}
-          <div className="flex flex-col md:flex-row justify-between items-center mb-6">
-            <div>
-              <h1 className="text-4xl font-bold text-foreground">
-                {user ? `Welcome, ${user.name}` : "Dashboard"}
-              </h1>
-              <p className="text-muted-foreground mt-2">
-                Manage your food donations and requests easily
-              </p>
-            </div>
-
-            {user && (
-              <div className="flex gap-3 mt-4 md:mt-0">
-                <Button variant="outline" onClick={() => navigate("/account")}>
-                  My Account
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleLogout}
-                  className="flex items-center gap-2"
-                >
-                  <LogOut className="h-4 w-4" /> Logout
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Actions */}
-          {user?.role === "donor" ? donorActions : receiverActions}
-
-          {/* Stats */}
-          <div className="grid md:grid-cols-3 gap-6 mt-8">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5 text-primary" />
-                  Active Donations
-                </CardTitle>
-                <CardDescription>Food items you’re currently sharing</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-primary">
-                  {loading ? "..." : foods.length}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Inbox className="h-5 w-5 text-secondary" />
-                  Pending Requests
-                </CardTitle>
-                <CardDescription>Requests awaiting approval</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-secondary">
-                  {loading ? "..." : requests.length}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-accent" />
-                  Total Impact
-                </CardTitle>
-                <CardDescription>Meals shared with the community</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-accent">
-                  {loading ? "..." : totalImpact}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Donor Section */}
-          {user?.role === "donor" && (
-            <div className="mt-12">
-              <h2 className="text-2xl font-bold text-blue-700 mb-4">🥘 My Donations</h2>
-              {loading ? (
-                <p>Loading your donations...</p>
-              ) : foods.length === 0 ? (
-                <p className="text-gray-500">You have not donated any food yet.</p>
-              ) : (
-                <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-                  {foods.map((food) => (
-                    <Card key={food._id} className="shadow-md hover:shadow-lg transition border border-gray-200 rounded-2xl overflow-hidden">
-                      {food.image && (
-                        <img src={renderString(food.image)} alt={renderString(food.title)} className="w-full h-40 object-cover" />
-                      )}
-                      <CardHeader>
-                        <CardTitle className="text-blue-700">{renderString(food.title)}</CardTitle>
-                      </CardHeader>
-                      <CardContent className="text-gray-700 space-y-2">
-                        <p className="text-sm">
-                          <strong>Quantity:</strong> {renderString(food.quantity)} {renderString(food.unit)}
-                        </p>
-                        {food.pickupLocation && (
-                          <p className="text-sm">
-                            <strong>Pickup:</strong> {typeof food.pickupLocation === "object" ? food.pickupLocation.address : food.pickupLocation}
-                          </p>
-                        )}
-                        <p className="text-sm">
-                          <strong>Posted On:</strong> {new Date(food.createdAt).toLocaleDateString()}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-
-              {/* Pending Requests Section for Donor */}
-              {requests.length > 0 && (
-                <div className="mt-12">
-                  <h2 className="text-2xl font-bold text-blue-700 mb-4">📬 Pending Requests</h2>
-                  <div className="grid sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {requests.map((req) => (
-                      <Card key={req._id} className="shadow-md hover:shadow-lg transition border border-gray-200 rounded-2xl overflow-hidden">
-                        <CardHeader>
-                          <CardTitle>{req.food?.title}</CardTitle>
-                          <CardDescription>Requested by: {req.requestedBy?.name}</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-2">
-                          <p>Status: {req.status}</p>
-                          <div className="flex gap-2">
-                            {req.status === "pending" && (
-                              <>
-                                <Button
-                                  variant="default"
-                                  onClick={() => handleUpdateRequest(req._id, "approved")}
-                                >
-                                  Approve
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  onClick={() => handleUpdateRequest(req._id, "declined")}
-                                >
-                                  Decline
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Receiver Section */}
-          {user?.role === "receiver" && (
-            <div className="mt-12">
-              <h2 className="text-2xl font-bold text-green-700 mb-4">🥗 Available Food Donations</h2>
-              {loading ? (
-                <p>Loading available donations...</p>
-              ) : foods.length === 0 ? (
-                <p className="text-gray-500">No donations available at the moment.</p>
-              ) : (
-                <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-                  {foods.map((food) => (
-                    <Card key={food._id} className="shadow-md hover:shadow-lg transition border border-gray-200 rounded-2xl overflow-hidden">
-                      {food.image && (
-                        <img src={renderString(food.image)} alt={renderString(food.title)} className="w-full h-40 object-cover" />
-                      )}
-                      <CardHeader>
-                        <CardTitle className="text-green-700">{renderString(food.title)}</CardTitle>
-                      </CardHeader>
-                      <CardContent className="text-gray-700 space-y-2">
-                        <p className="text-sm">
-                          <strong>Quantity:</strong> {renderString(food.quantity)} {renderString(food.unit)}
-                        </p>
-                        {food.pickupLocation && (
-                          <p className="text-sm">
-                            <strong>Pickup:</strong> {typeof food.pickupLocation === "object" ? food.pickupLocation.address : food.pickupLocation}
-                          </p>
-                        )}
-                        <p className="text-sm">
-                          <strong>Posted On:</strong> {new Date(food.createdAt).toLocaleDateString()}
-                        </p>
-                        <Button asChild variant="secondary" className="mt-2 w-full">
-                          <Link to={`/request-food/${food._id}`}>Request Food</Link>
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+    <DashboardLayout>
+      {/* Search / Context Header (Optional, mostly handled by Layout now) */}
+      
+      {/* Dynamic Dashboard Content */}
+      {userRole === "admin" ? (
+        <AdminDashboard user={user} />
+      ) : userRole === "rider" ? (
+        <RiderDashboard user={user} />
+      ) : userRole === "donor" ? (
+        <DonorDashboard 
+          user={user}
+          foods={foods} 
+          requests={requests} 
+          loading={loading} 
+          renderString={renderString} 
+          handleUpdateRequest={handleUpdateRequest}
+        />
+      ) : userRole === "receiver" ? (
+        <ReceiverDashboard 
+          user={user}
+          foods={foods} 
+          requests={requests} 
+          loading={loading} 
+          renderString={renderString} 
+        />
+      ) : (
+        <div className="min-h-[50vh] flex flex-col items-center justify-center p-8 bg-red-50 text-red-900 rounded-xl m-4 border border-red-200">
+            <h2 className="text-2xl font-bold mb-2">Account Role Error</h2>
+            <p className="text-lg">Your account has an unrecognized role: <span className="font-mono bg-white px-2 py-1 rounded border border-red-300">{user?.role || "undefined"}</span></p>
+            <p className="mt-2 text-sm opacity-80">Please logout and try logging in again. If this persists, contact an admin.</p>
+            <Button onClick={handleLogout} variant="destructive" className="mt-6">Logout and Fix</Button>
         </div>
-      </main>
-
-      <Footer />
-    </div>
+      )}
+    </DashboardLayout>
   );
 };
 

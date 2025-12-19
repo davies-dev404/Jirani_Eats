@@ -1,107 +1,80 @@
 import User from "../models/User.js";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import generateToken from "../utils/generateToken.js";
 
-// ✅ REGISTER USER
+// @desc    Register a new user
+// @route   POST /api/auth/register
+// @access  Public
 export const registerUser = async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
+  const { name, email, password, role, phone, address } = req.body;
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+  try {
+    const userExists = await User.findOne({ email });
+
+    if (userExists) {
       return res.status(400).json({ message: "User already exists" });
     }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await User.create({
       name,
       email,
-      password: hashedPassword,
-      role: role || "receiver", // default
+      password,
+      role: role || "receiver",
+      phone,
+      address,
+      verificationStatus: role === 'rider' || role === 'donor' ? 'pending' : 'unverified'
     });
 
-    res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      createdAt: user.createdAt,
-    });
-  } catch (error) {
-    console.error("Register error:", error);
-    res.status(500).json({ message: "Server error during registration" });
-  }
-};
-
-// ✅ LOGIN USER
-export const loginUser = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-
-    if (!user) return res.status(400).json({ message: "Invalid email or password" });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid email or password" });
-
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-    res.json({
-      user: {
+    if (user) {
+      const token = generateToken(res, user._id);
+      res.status(201).json({
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        phone: user.phone,
-        address: user.address,
-        bio: user.bio,
-        createdAt: user.createdAt,
-      },
-      token,
-    });
+        token, 
+      });
+    } else {
+      res.status(400).json({ message: "Invalid user data" });
+    }
   } catch (error) {
-    console.error("Login error:", error);
-    res.status(500).json({ message: "Server error during login" });
+    res.status(500).json({ message: error.message });
   }
 };
 
-// ✅ GET PROFILE
-export const getProfile = async (req, res) => {
+// @desc    Auth user & get token
+// @route   POST /api/auth/login
+// @access  Public
+export const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+
   try {
-    const user = await User.findById(req.user.id).select("-password");
-    if (!user) return res.status(404).json({ message: "User not found" });
-    res.json(user);
+    const user = await User.findOne({ email });
+
+    if (user && (await user.matchPassword(password))) {
+      if(user.status === 'suspended') {
+          return res.status(403).json({ message: "Your account is suspended. Please contact admin."});
+      }
+
+      const token = generateToken(res, user._id);
+      res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        token,
+      });
+    } else {
+      res.status(401).json({ message: "Invalid email or password" });
+    }
   } catch (error) {
-    res.status(500).json({ message: "Server error fetching profile" });
+    res.status(500).json({ message: error.message });
   }
 };
 
-// ✅ UPDATE PROFILE
-export const updateProfile = async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    user.name = req.body.name || user.name;
-    user.phone = req.body.phone || user.phone;
-    user.address = req.body.address || user.address;
-    user.bio = req.body.bio || user.bio;
-
-    const updatedUser = await user.save();
-
-    res.json({
-      _id: updatedUser._id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      role: updatedUser.role,
-      phone: updatedUser.phone,
-      address: updatedUser.address,
-      bio: updatedUser.bio,
-      createdAt: updatedUser.createdAt,
-    });
-  } catch (error) {
-    console.error("Update profile error:", error);
-    res.status(500).json({ message: "Server error updating profile" });
-  }
+// @desc    Logout user / clear cookie
+// @route   POST /api/auth/logout
+// @access  Public
+export const logoutUser = (req, res) => {
+  // Client side handles token removal usually
+  res.status(200).json({ message: "Logged out successfully" });
 };
