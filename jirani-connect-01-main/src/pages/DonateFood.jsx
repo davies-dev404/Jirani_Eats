@@ -18,7 +18,7 @@ const DonateFood = () => {
   });
 
   const navigate = useNavigate();
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });

@@ -10,7 +10,7 @@ import api from "../api";
 const MyRequests = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
   const navigate = useNavigate();
 
   // ✅ Fetch all requests for this user

@@ -13,8 +13,8 @@ export const AuthProvider = ({ children }) => {
   // Load stored auth data and refresh profile
   useEffect(() => {
     const initAuth = async () => {
-      const storedUser = localStorage.getItem("user");
-      const storedToken = localStorage.getItem("token");
+      const storedUser = sessionStorage.getItem("user");
+      const storedToken = sessionStorage.getItem("token");
 
       if (storedUser && storedToken) {
         setToken(storedToken);
@@ -24,8 +24,11 @@ export const AuthProvider = ({ children }) => {
         try {
           // 🔄 Verify & Refresh Profile from Backend (Cache-busted)
           const { data } = await api.get(`/users/profile?_=${Date.now()}`);
-          setUser(data);
-          localStorage.setItem("user", JSON.stringify(data));
+          const userData = data.user || data;
+          setUser(userData);
+          localStorage.removeItem("token"); // Cleanup old localStorage if exists (optional cleanup)
+          localStorage.removeItem("user");
+          sessionStorage.setItem("user", JSON.stringify(userData));
         } catch (error) {
           console.error("Session verification failed", error);
           if (error.response?.status === 401) {
@@ -57,12 +60,16 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data } = await api.post("/auth/login", { email, password });
 
-      setUser(data);
-      setToken(data.token);
-      localStorage.setItem("user", JSON.stringify(data));
-      localStorage.setItem("token", data.token);
+      // Handle both flat and nested user response structures
+      const userData = data.user || data;
+      const token = data.token;
 
-      return data; // important for redirects
+      setUser(userData);
+      setToken(token);
+      sessionStorage.setItem("user", JSON.stringify(userData));
+      sessionStorage.setItem("token", token);
+
+      return userData; // important for redirects
     } catch (error) {
       console.error("Login Error:", error);
       throw new Error(
@@ -88,7 +95,7 @@ export const AuthProvider = ({ children }) => {
   const updateUser = (updatedData) => {
     setUser((prev) => {
       const newUser = { ...prev, ...updatedData };
-      localStorage.setItem("user", JSON.stringify(newUser));
+      sessionStorage.setItem("user", JSON.stringify(newUser));
       return newUser;
     });
   };
@@ -96,8 +103,8 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     setToken(null);
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
+    sessionStorage.removeItem("user");
+    sessionStorage.removeItem("token");
     navigate("/auth");
   };
 

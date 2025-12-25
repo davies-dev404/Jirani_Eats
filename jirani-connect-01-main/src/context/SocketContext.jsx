@@ -19,7 +19,7 @@ export const SocketProvider = ({ children }) => {
       // Connect to socket when user is logged in
       const newSocket = io(import.meta.env.VITE_API_URL || 'http://127.0.0.1:5001', {
         query: { userId: user._id },
-        auth: { token: localStorage.getItem("token") } // Pass token for auth middleware
+        auth: { token: sessionStorage.getItem("token") } // Pass token for auth middleware
       });
 
       setSocket(newSocket);

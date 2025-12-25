@@ -9,7 +9,7 @@ const RequestFood = () => {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
 
   const [food, setFood] = useState(null);
   const [requesting, setRequesting] = useState(false);

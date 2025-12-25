@@ -13,7 +13,7 @@ import api from "../api";
 const BrowseDonations = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
 
   const [foods, setFoods] = useState([]);
   const [requests, setRequests] = useState([]);

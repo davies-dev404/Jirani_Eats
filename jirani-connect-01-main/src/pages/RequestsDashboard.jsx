@@ -8,7 +8,7 @@ import api from "../api";
 
 const MyRequests = () => {
   const { user } = useAuth();
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 

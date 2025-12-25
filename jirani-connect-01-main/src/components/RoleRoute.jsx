@@ -13,9 +13,10 @@ export default function RoleRoute({ allowedRoles }) {
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role?.toLowerCase())) {
-    console.warn(`[RoleRoute] Access denied. User role '${user.role}' not in allowed list [${allowedRoles}]. Redirecting to /dashboard/${user.role?.toLowerCase()}`);
+    const target = user.role ? `/dashboard/${user.role.toLowerCase()}` : "/auth";
+    console.warn(`[RoleRoute] Access denied. User role '${user.role}' not in allowed list [${allowedRoles}]. Redirecting to ${target}`);
     // Redirect to their appropriate dashboard if they try to access unauthorized area
-    return <Navigate to={`/dashboard/${user.role?.toLowerCase()}`} replace />;
+    return <Navigate to={target} replace />;
   }
 
   return <Outlet />;

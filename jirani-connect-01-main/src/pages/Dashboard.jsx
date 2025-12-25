@@ -16,7 +16,7 @@ import RiderDashboard from "@/components/dashboards/RiderDashboard";
 const Dashboard = () => {
   const { user, logout, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token");
 
   const [foods, setFoods] = useState([]);
   const [requests, setRequests] = useState([]);
